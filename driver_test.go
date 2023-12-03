@@ -6,12 +6,15 @@ import (
 	"testing"
 	"time"
 
-	"ariga.io/entcache"
+	"github.com/redis/rueidis"
+	"go.uber.org/mock/gomock"
+
+	"github.com/DeltaLaboratory/entcache"
 
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/go-redis/redismock/v9"
+	ruemock "github.com/redis/rueidis/mock"
 )
 
 func TestDriver_ContextLevel(t *testing.T) {
@@ -115,8 +118,8 @@ func TestDriver_Levels(t *testing.T) {
 
 	t.Run("Redis", func(t *testing.T) {
 		var (
-			rdb, rmock = redismock.NewClientMock()
-			drv        = entcache.NewDriver(
+			rdb = ruemock.NewClient(gomock.NewController(t))
+			drv = entcache.NewDriver(
 				drv,
 				entcache.Levels(
 					entcache.NewLRU(-1),
@@ -127,17 +130,17 @@ func TestDriver_Levels(t *testing.T) {
 				}),
 			)
 		)
+		rdb.EXPECT().Do(context.Background(), ruemock.Match("GET", "1")).Return(ruemock.Result(ruemock.RedisNil()))
 		mock.ExpectQuery("SELECT active FROM users").
 			WillReturnRows(sqlmock.NewRows([]string{"active"}).AddRow(true).AddRow(false))
-		rmock.ExpectGet("1").RedisNil()
+
 		buf, _ := entcache.Entry{Values: [][]driver.Value{{true}, {false}}}.MarshalBinary()
-		rmock.ExpectSet("1", buf, 0).RedisNil()
+		rdb.EXPECT().Do(context.Background(), ruemock.Match("SET", "1", rueidis.BinaryString(buf), "EX", "0")).Return(ruemock.Result(ruemock.RedisNil()))
 		expectQuery(context.Background(), t, drv, "SELECT active FROM users", []interface{}{true, false})
-		rmock.ExpectGet("1").SetVal(string(buf))
+
+		rdb.EXPECT().Do(context.Background(), ruemock.Match("GET", "1")).Return(ruemock.Result(ruemock.RedisString(rueidis.BinaryString(buf))))
 		expectQuery(context.Background(), t, drv, "SELECT active FROM users", []interface{}{true, false})
-		if err := rmock.ExpectationsWereMet(); err != nil {
-			t.Fatal(err)
-		}
+
 		expected := entcache.Stats{Gets: 2, Hits: 1}
 		if s := drv.Stats(); s != expected {
 			t.Errorf("unexpected stats: %v != %v", s, expected)
@@ -268,7 +271,7 @@ func expectQuery(ctx context.Context, t *testing.T, drv dialect.Driver, query st
 	}
 	for i := range dest {
 		if dest[i] != args[i] {
-			t.Fatalf("mismatch values: %v != %v", dest[i], args[i])
+			t.Fatalf("mismatch values: %v %T != %v %T", dest[i], dest[i], args[i], args[i])
 		}
 	}
 	if err := rows.Close(); err != nil {

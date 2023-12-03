@@ -17,7 +17,7 @@ import (
 )
 
 type (
-	// Options wraps the basic configuration cache options.
+	// Options wrap the basic configuration cache options.
 	Options struct {
 		// TTL defines the period of time that an Entry
 		// is valid in the cache.
@@ -34,7 +34,7 @@ type (
 		Hash func(query string, args []any) (Key, error)
 
 		// Logf function. If provided, the Driver will call it with
-		// errors that can not be handled.
+		// errors that cannot be handled.
 		Log func(...any)
 	}
 
@@ -42,8 +42,8 @@ type (
 	// driver using functional options.
 	Option func(*Options)
 
-	// A Driver is an SQL cached client. Users should use the
-	// constructor below for creating new driver.
+	// A Driver is an SQL-cached client.
+	// Users should use the constructor below for creating a new driver.
 	Driver struct {
 		dialect.Driver
 		*Options
@@ -52,7 +52,8 @@ type (
 )
 
 // NewDriver returns a new Driver an existing driver and optional
-// configuration functions. For example:
+// configuration functions.
+// For example,
 //
 //	entcache.NewDriver(
 //		drv,
@@ -91,7 +92,7 @@ func Hash(hash func(query string, args []any) (Key, error)) Option {
 	}
 }
 
-// Levels configures the Driver to work with the given cache levels.
+// Levels configure the Driver to work with the given cache levels.
 // For example, in process LRU cache and a remote Redis cache.
 func Levels(levels ...AddGetDeleter) Option {
 	return func(o *Options) {
@@ -104,7 +105,7 @@ func Levels(levels ...AddGetDeleter) Option {
 }
 
 // ContextLevel configures the driver to work with context/request level cache.
-// Users that use this option, should wraps the *http.Request context with the
+// Users that use this option should wrap the *http.Request context with the
 // cache value as follows:
 //
 //	ctx = entcache.NewContext(ctx)
@@ -119,15 +120,15 @@ func ContextLevel() Option {
 // Query implements the Querier interface for the driver. It falls back to the
 // underlying wrapped driver in case of caching error.
 //
-// Note that, the driver does not synchronize identical queries that are executed
-// concurrently. Hence, if 2 identical queries are executed at the ~same time, and
+// Note that the driver does not synchronize identical queries that are executed
+// concurrently. Hence, if two identical queries are executed at the ~same time, and
 // there is no cache entry for them, the driver will execute both of them and the
 // last successful one will be stored in the cache.
 func (d *Driver) Query(ctx context.Context, query string, args, v any) error {
-	// Check if the given statement looks like a standard Ent query (e.g. SELECT).
-	// Custom queries (e.g. CTE) or statements that are prefixed with comments are
-	// not supported. This check is mainly necessary, because PostgreSQL and SQLite
-	// may execute insert statement like "INSERT ... RETURNING" using Driver.Query.
+	// Check if the given statement looks like a standard Ent query (e.g., SELECT).
+	// Custom queries (e.g., CTE) or statements that are prefixed with comments are not supported.
+	// This check is mainly necessary because PostgreSQL and SQLite
+	// may execute an insert statement like "INSERT ... RETURNING" using Driver.Query.
 	if !strings.HasPrefix(query, "SELECT") && !strings.HasPrefix(query, "select") {
 		return d.Driver.Query(ctx, query, args, v)
 	}
@@ -148,7 +149,7 @@ func (d *Driver) Query(ctx context.Context, query string, args, v any) error {
 	case err == nil:
 		atomic.AddUint64(&d.stats.Hits, 1)
 		vr.ColumnScanner = &repeater{columns: e.Columns, values: e.Values}
-	case err == ErrNotFound:
+	case errors.Is(err, ErrNotFound):
 		if err := d.Driver.Query(ctx, query, args, vr); err != nil {
 			return err
 		}
@@ -168,7 +169,7 @@ func (d *Driver) Query(ctx context.Context, query string, args, v any) error {
 	return nil
 }
 
-// Stats returns a copy of the cache statistics.
+// Stats return a copy of the cache statistics.
 func (d *Driver) Stats() Stats {
 	return Stats{
 		Gets:   atomic.LoadUint64(&d.stats.Gets),
@@ -246,7 +247,7 @@ func DefaultHash(query string, args []any) (Key, error) {
 	return key, nil
 }
 
-// Stats represents the cache statistics of the driver.
+// Stats represent the cache statistics of the driver.
 type Stats struct {
 	Gets   uint64
 	Hits   uint64
@@ -270,7 +271,7 @@ func (c *rawCopy) Scan(src interface{}) error {
 	return nil
 }
 
-// recorder represents an sql.Rows recorder that implements
+// recorder represents a sql.Rows recorder that implements
 // the entgo.io/ent/dialect/sql.ColumnScanner interface.
 type recorder struct {
 	sql.ColumnScanner
@@ -309,9 +310,9 @@ func (r *recorder) Scan(dest ...any) error {
 	return nil
 }
 
-// Columns wraps the underlying Column method and stores it in the recorder state.
+// Columns wrap the underlying Column method and store it in the recorder state.
 // The repeater.Columns cannot be called if the recorder method was not called before.
-// That means, raw scanning should be identical for identical queries.
+// That means raw scanning should be identical for identical queries.
 func (r *recorder) Columns() ([]string, error) {
 	columns, err := r.ColumnScanner.Columns()
 	if err != nil {

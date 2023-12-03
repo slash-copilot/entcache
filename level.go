@@ -1,26 +1,19 @@
 package entcache
 
 import (
-	"bytes"
 	"context"
 	"database/sql/driver"
-	"encoding/gob"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/golang/groupcache/lru"
-	"github.com/redis/go-redis/v9"
+	"github.com/redis/rueidis"
 )
 
 type (
-	// Entry defines an entry to store in a cache.
-	Entry struct {
-		Columns []string
-		Values  [][]driver.Value
-	}
-
 	// A Key defines a comparable Go value.
 	// See http://golang.org/ref/spec#Comparison_operators
 	Key any
@@ -34,38 +27,35 @@ type (
 	}
 )
 
-func init() {
-	// Register non builtin driver.Values.
-	gob.Register(time.Time{})
+var (
+	// BinaryMarshaller is used to marshal the Entry into a binary format.
+	BinaryMarshaller = cbor.Marshal
+	// BinaryUnmarshaler is used to unmarshal the Entry from a binary format.
+	BinaryUnmarshaler = cbor.Unmarshal
+)
+
+type Entry struct {
+	Columns []string         `cbor:"0,keyasint" json:"c" bson:"c"`
+	Values  [][]driver.Value `cbor:"1,keyasint" json:"v" bson:"v"`
 }
 
-// MarshalBinary implements the encoding.BinaryMarshaler interface.
+// MarshalBinary implements the encoding.BinaryMarshaller interface.
 func (e Entry) MarshalBinary() ([]byte, error) {
-	entry := struct {
-		C []string
-		V [][]driver.Value
+	v := struct {
+		Columns []string         `cbor:"0,keyasint" json:"c" bson:"c"`
+		Values  [][]driver.Value `cbor:"1,keyasint" json:"v" bson:"v"`
 	}{
-		C: e.Columns,
-		V: e.Values,
+		Columns: e.Columns,
+		Values:  e.Values,
 	}
-	var buf bytes.Buffer
-	if err := gob.NewEncoder(&buf).Encode(entry); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	return BinaryMarshaller(v)
 }
 
 // UnmarshalBinary implements the encoding.BinaryUnmarshaler interface.
 func (e *Entry) UnmarshalBinary(buf []byte) error {
-	var entry struct {
-		C []string
-		V [][]driver.Value
-	}
-	if err := gob.NewDecoder(bytes.NewBuffer(buf)).Decode(&entry); err != nil {
+	if err := BinaryUnmarshaler(buf, e); err != nil {
 		return err
 	}
-	e.Values = entry.V
-	e.Columns = entry.C
 	return nil
 }
 
@@ -148,19 +138,11 @@ func (l *LRU) Del(_ context.Context, k Key) error {
 // Redis provides a remote cache backed by Redis
 // and implements the SetGetter interface.
 type Redis struct {
-	c redis.Cmdable
+	c rueidis.Client
 }
 
 // NewRedis returns a new Redis cache level from the given Redis connection.
-//
-//	entcache.NewRedis(redis.NewClient(&redis.Options{
-//		Addr: ":6379"
-//	}))
-//
-//	entcache.NewRedis(redis.NewClusterClient(&redis.ClusterOptions{
-//		Addrs: []string{":7000", ":7001", ":7002"},
-//	}))
-func NewRedis(c redis.Cmdable) *Redis {
+func NewRedis(c rueidis.Client) *Redis {
 	return &Redis{c: c}
 }
 
@@ -174,10 +156,7 @@ func (r *Redis) Add(ctx context.Context, k Key, e *Entry, ttl time.Duration) err
 	if err != nil {
 		return err
 	}
-	if err := r.c.Set(ctx, key, buf, ttl).Err(); err != nil {
-		return err
-	}
-	return nil
+	return r.c.Do(ctx, r.c.B().Set().Key(key).Value(rueidis.BinaryString(buf)).Ex(ttl).Build()).Error()
 }
 
 // Get gets an entry from the cache.
@@ -186,7 +165,7 @@ func (r *Redis) Get(ctx context.Context, k Key) (*Entry, error) {
 	if key == "" {
 		return nil, ErrNotFound
 	}
-	buf, err := r.c.Get(ctx, key).Bytes()
+	buf, err := r.c.Do(ctx, r.c.B().Get().Key(key).Build()).AsBytes()
 	if err != nil || len(buf) == 0 {
 		return nil, ErrNotFound
 	}
@@ -203,7 +182,7 @@ func (r *Redis) Del(ctx context.Context, k Key) error {
 	if key == "" {
 		return nil
 	}
-	return r.c.Del(ctx, key).Err()
+	return r.c.Do(ctx, r.c.B().Del().Key(key).Build()).Error()
 }
 
 // multiLevel provides a multi-level cache implementation.
@@ -227,7 +206,7 @@ func (m *multiLevel) Get(ctx context.Context, k Key) (*Entry, error) {
 		switch e, err := m.levels[i].Get(ctx, k); {
 		case err == nil:
 			return e, nil
-		case err != ErrNotFound:
+		case !errors.Is(err, ErrNotFound):
 			return nil, err
 		}
 	}

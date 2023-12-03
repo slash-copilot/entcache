@@ -11,7 +11,6 @@ import (
 	"todo/ent"
 	"todo/ent/migrate"
 
-	"ariga.io/entcache"
 	"entgo.io/contrib/entgql"
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
@@ -20,6 +19,8 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/go-redis/redis/v8"
 	_ "github.com/mattn/go-sqlite3"
+
+	"ariga.io/entcache"
 )
 
 func main() {
