@@ -1,14 +1,15 @@
 package entcache
 
 import (
+	"bytes"
 	"context"
 	"database/sql/driver"
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/golang/groupcache/lru"
 	"github.com/redis/rueidis"
 )
@@ -27,35 +28,38 @@ type (
 	}
 )
 
-var (
-	// BinaryMarshaller is used to marshal the Entry into a binary format.
-	BinaryMarshaller = cbor.Marshal
-	// BinaryUnmarshaler is used to unmarshal the Entry from a binary format.
-	BinaryUnmarshaler = cbor.Unmarshal
-)
-
 type Entry struct {
 	Columns []string         `cbor:"0,keyasint" json:"c" bson:"c"`
 	Values  [][]driver.Value `cbor:"1,keyasint" json:"v" bson:"v"`
 }
 
-// MarshalBinary implements the encoding.BinaryMarshaller interface.
+// MarshalBinary implements the encoding.BinaryMarshaler interface.
 func (e Entry) MarshalBinary() ([]byte, error) {
-	v := struct {
-		Columns []string         `cbor:"0,keyasint" json:"c" bson:"c"`
-		Values  [][]driver.Value `cbor:"1,keyasint" json:"v" bson:"v"`
+	entry := struct {
+		C []string
+		V [][]driver.Value
 	}{
-		Columns: e.Columns,
-		Values:  e.Values,
+		C: e.Columns,
+		V: e.Values,
 	}
-	return BinaryMarshaller(v)
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(entry); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 // UnmarshalBinary implements the encoding.BinaryUnmarshaler interface.
 func (e *Entry) UnmarshalBinary(buf []byte) error {
-	if err := BinaryUnmarshaler(buf, e); err != nil {
+	var entry struct {
+		C []string
+		V [][]driver.Value
+	}
+	if err := gob.NewDecoder(bytes.NewBuffer(buf)).Decode(&entry); err != nil {
 		return err
 	}
+	e.Values = entry.V
+	e.Columns = entry.C
 	return nil
 }
 
