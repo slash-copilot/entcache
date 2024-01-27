@@ -138,7 +138,7 @@ func (d *Driver) Query(ctx context.Context, query string, args, v any) error {
 	}
 	argv, ok := args.([]any)
 	if !ok {
-		return fmt.Errorf("entcache: invalid type %T. expect []interface{} for args", args)
+		return fmt.Errorf("entcache: invalid type %T. expect []any for args", args)
 	}
 	opts, err := d.optionsFromContext(ctx, query, argv)
 	if err != nil {

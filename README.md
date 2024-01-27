@@ -110,7 +110,7 @@ query($ids: [ID!]!) {
 }
 ```
 
-A naive solution for resolving the above query will execute, 1 for getting N users, another N queries for getting
+A naive solution for resolving the above query will execute, 1 for getting N users, another N query for getting
 the todos of each user, and a query for each todo item for getting its owner (read more about the
 [_N+1 Problem_](https://entgo.io/docs/tutorial-todo-gql-field-collection/#problem)).
 

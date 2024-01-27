@@ -63,7 +63,7 @@ func (e *Entry) UnmarshalBinary(buf []byte) error {
 	return nil
 }
 
-// ErrNotFound is returned by Get when and Entry does not exist in the cache.
+// ErrNotFound returned by Get when and Entry does not exist in the cache.
 var ErrNotFound = errors.New("entcache: entry was not found")
 
 type (
