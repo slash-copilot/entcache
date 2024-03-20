@@ -1,4 +1,4 @@
-module github.com/DeltaLaboratory/entcache
+module github.com/slash-copilot/entcache
 
 go 1.21
 
